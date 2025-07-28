@@ -1,7 +1,8 @@
--- Create database (run this first)
--- CREATE DATABASE costa_voyage;
+-- Create database
+CREATE DATABASE IF NOT EXISTS costa_voyage;
 
--- Connect to the database and run the following:
+-- Use the database
+\c costa_voyage;
 
 -- Create cities table
 CREATE TABLE IF NOT EXISTS cities (
@@ -9,24 +10,8 @@ CREATE TABLE IF NOT EXISTS cities (
     name VARCHAR(100) NOT NULL UNIQUE,
     country VARCHAR(100) NOT NULL,
     description TEXT,
-    image VARCHAR(500) DEFAULT '/placeholder.svg?height=200&width=300',
+    image VARCHAR(255),
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create bookings table
-CREATE TABLE IF NOT EXISTS bookings (
-    id SERIAL PRIMARY KEY,
-    agency VARCHAR(255) NOT NULL,
-    hotel VARCHAR(255) NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    check_in DATE NOT NULL,
-    check_out DATE NOT NULL,
-    rooms INTEGER NOT NULL DEFAULT 1,
-    guests INTEGER NOT NULL DEFAULT 1,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('confirmed', 'pending', 'cancelled')),
-    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -34,14 +19,30 @@ CREATE TABLE IF NOT EXISTS bookings (
 -- Create hotels table
 CREATE TABLE IF NOT EXISTS hotels (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(200) NOT NULL,
     city VARCHAR(100) NOT NULL,
-    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-    phone VARCHAR(50),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+    phone VARCHAR(20),
     address TEXT,
-    amenities TEXT[], -- Array of amenities
+    amenities TEXT[],
     description TEXT,
-    image VARCHAR(500) DEFAULT '/placeholder.svg?height=200&width=300',
+    image VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create bookings table
+CREATE TABLE IF NOT EXISTS bookings (
+    id SERIAL PRIMARY KEY,
+    agency VARCHAR(200) NOT NULL,
+    hotel VARCHAR(200) NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    check_in DATE NOT NULL,
+    check_out DATE NOT NULL,
+    rooms INTEGER NOT NULL CHECK (rooms > 0),
+    guests INTEGER NOT NULL CHECK (guests > 0),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('confirmed', 'pending', 'cancelled')),
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -49,57 +50,32 @@ CREATE TABLE IF NOT EXISTS hotels (
 -- Create tours table
 CREATE TABLE IF NOT EXISTS tours (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    destination VARCHAR(100) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    city VARCHAR(100) NOT NULL,
     duration VARCHAR(50),
-    group_size VARCHAR(50),
+    max_participants INTEGER,
+    price DECIMAL(10,2),
     description TEXT,
-    image VARCHAR(500) DEFAULT '/placeholder.svg?height=200&width=400',
+    image VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create users table for admin functionality
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create backups table to track backup history
-CREATE TABLE IF NOT EXISTS backups (
-    id SERIAL PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
-CREATE INDEX IF NOT EXISTS idx_cities_is_active ON cities(is_active);
-CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
 CREATE INDEX IF NOT EXISTS idx_bookings_city ON bookings(city);
-CREATE INDEX IF NOT EXISTS idx_bookings_check_in ON bookings(check_in);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_dates ON bookings(check_in, check_out);
 CREATE INDEX IF NOT EXISTS idx_hotels_city ON hotels(city);
 CREATE INDEX IF NOT EXISTS idx_hotels_rating ON hotels(rating);
-CREATE INDEX IF NOT EXISTS idx_tours_destination ON tours(destination);
+CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active);
+CREATE INDEX IF NOT EXISTS idx_tours_city ON tours(city);
 
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- Add foreign key constraints (optional, for data integrity)
+-- ALTER TABLE bookings ADD CONSTRAINT fk_booking_city FOREIGN KEY (city) REFERENCES cities(name);
+-- ALTER TABLE hotels ADD CONSTRAINT fk_hotel_city FOREIGN KEY (city) REFERENCES cities(name);
+-- ALTER TABLE tours ADD CONSTRAINT fk_tour_city FOREIGN KEY (city) REFERENCES cities(name);
 
--- Create triggers for updated_at
-CREATE TRIGGER update_cities_updated_at BEFORE UPDATE ON cities FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_bookings_updated_at BEFORE UPDATE ON bookings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_hotels_updated_at BEFORE UPDATE ON hotels FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_tours_updated_at BEFORE UPDATE ON tours FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+COMMENT ON TABLE cities IS 'Destination cities for travel bookings';
+COMMENT ON TABLE hotels IS 'Hotel directory with ratings and amenities';
+COMMENT ON TABLE bookings IS 'Hotel booking records from travel agencies';
+COMMENT ON TABLE tours IS 'Tour packages available in different cities';

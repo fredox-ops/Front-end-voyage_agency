@@ -2,10 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Pool } from "pg"
 
 const pool = new Pool({
-  user: "postgres", // Change this to your PostgreSQL username
+  user: "postgres",
   host: "localhost",
-  database: "costa_voyage", // Change this to your database name
-  password: "mohamedrt133", // Change this to your PostgreSQL password
+  database: "costa_voyage",
+  password: "mohamedrt133",
   port: 5432,
 })
 
@@ -22,7 +22,7 @@ export async function GET() {
         is_active as "isActive",
         created_at as "createdAt"
       FROM cities 
-      ORDER BY name ASC
+      ORDER BY created_at DESC
     `)
     client.release()
 
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect()
     const result = await client.query(
       `
-      INSERT INTO cities (name, country, description, image, is_active)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO cities (name, country, description, is_active)
+      VALUES ($1, $2, $3, $4)
       RETURNING 
         id,
         name,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         is_active as "isActive",
         created_at as "createdAt"
     `,
-      [name, country, description, "/placeholder.svg?height=200&width=300", isActive],
+      [name, country, description, isActive],
     )
 
     client.release()

@@ -20,6 +20,7 @@ import {
   Cloud,
   Shield,
   Globe,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -68,6 +69,8 @@ interface Booking {
   rooms: number
   guests: number
   status: "confirmed" | "pending" | "cancelled"
+  notes?: string
+  createdAt: string
 }
 
 interface Hotel {
@@ -77,6 +80,9 @@ interface Hotel {
   rating: number
   image: string
   amenities: string[]
+  phone?: string
+  address?: string
+  description?: string
 }
 
 interface City {
@@ -102,6 +108,9 @@ export default function CostaVoyageApp() {
   const [isCityDialogOpen, setIsCityDialogOpen] = useState(false)
   const [editingCity, setEditingCity] = useState<City | null>(null)
   const [deletingCity, setDeletingCity] = useState<City | null>(null)
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
+  const [viewingBooking, setViewingBooking] = useState<Booking | null>(null)
+  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null)
 
   // Load data on component mount
   useEffect(() => {
@@ -159,6 +168,7 @@ export default function CostaVoyageApp() {
       rooms: Number.parseInt(formData.get("rooms") as string),
       guests: Number.parseInt(formData.get("guests") as string),
       status: formData.get("status") as "confirmed" | "pending" | "cancelled",
+      notes: formData.get("notes") as string,
     }
 
     try {
@@ -179,6 +189,84 @@ export default function CostaVoyageApp() {
     } catch (error) {
       console.error("Error adding booking:", error)
       toast({ title: "Error", description: "Failed to add booking", variant: "destructive" })
+    }
+  }
+
+  const handleEditBooking = async (formData: FormData) => {
+    if (!editingBooking) return
+
+    const updatedBooking = {
+      agency: formData.get("agency") as string,
+      hotel: formData.get("hotel") as string,
+      city: formData.get("city") as string,
+      checkIn: formData.get("checkin") as string,
+      checkOut: formData.get("checkout") as string,
+      rooms: Number.parseInt(formData.get("rooms") as string),
+      guests: Number.parseInt(formData.get("guests") as string),
+      status: formData.get("status") as "confirmed" | "pending" | "cancelled",
+      notes: formData.get("notes") as string,
+    }
+
+    try {
+      const response = await fetch(`/api/bookings/${editingBooking.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedBooking),
+      })
+
+      if (response.ok) {
+        const booking = await response.json()
+        setBookings((prev) => prev.map((b) => (b.id === editingBooking.id ? booking : b)))
+        setEditingBooking(null)
+        toast({ title: "Success", description: "Booking updated successfully!" })
+      } else {
+        throw new Error("Failed to update booking")
+      }
+    } catch (error) {
+      console.error("Error updating booking:", error)
+      toast({ title: "Error", description: "Failed to update booking", variant: "destructive" })
+    }
+  }
+
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      })
+
+      if (response.ok) {
+        const updatedBooking = await response.json()
+        setBookings((prev) => prev.map((b) => (b.id === bookingId ? updatedBooking : b)))
+        toast({ title: "Success", description: "Booking cancelled successfully!" })
+      } else {
+        throw new Error("Failed to cancel booking")
+      }
+    } catch (error) {
+      console.error("Error cancelling booking:", error)
+      toast({ title: "Error", description: "Failed to cancel booking", variant: "destructive" })
+    }
+  }
+
+  const handleDeleteBooking = async () => {
+    if (!deletingBooking) return
+
+    try {
+      const response = await fetch(`/api/bookings/${deletingBooking.id}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        setBookings((prev) => prev.filter((b) => b.id !== deletingBooking.id))
+        setDeletingBooking(null)
+        toast({ title: "Success", description: "Booking deleted successfully!" })
+      } else {
+        throw new Error("Failed to delete booking")
+      }
+    } catch (error) {
+      console.error("Error deleting booking:", error)
+      toast({ title: "Error", description: "Failed to delete booking", variant: "destructive" })
     }
   }
 
@@ -287,25 +375,31 @@ export default function CostaVoyageApp() {
         setDeletingCity(null)
         toast({ title: "Success", description: "City deleted successfully!" })
       } else {
-        throw new Error("Failed to delete city")
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Failed to delete city")
       }
     } catch (error) {
       console.error("Error deleting city:", error)
-      toast({ title: "Error", description: "Failed to delete city", variant: "destructive" })
+      toast({ title: "Error", description: error.message || "Failed to delete city", variant: "destructive" })
     }
   }
 
-  const handleExportData = async (type: "excel" | "pdf", dataType: "bookings" | "hotels") => {
+  const handleExportData = async (format: "excel" | "pdf", dataType: "bookings" | "hotels" | "cities") => {
     try {
       setSyncStatus("syncing")
-      const response = await fetch(`/api/export/${dataType}?format=${type}`)
+      const response = await fetch(`/api/export/${dataType}?format=${format}`)
 
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        a.download = `${dataType}_export.${type === "excel" ? "xlsx" : "csv"}`
+
+        let extension = "xlsx"
+        if (format === "pdf") extension = "pdf"
+        else if (format === "excel") extension = "xlsx"
+
+        a.download = `${dataType}_export.${extension}`
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)
@@ -629,18 +723,24 @@ export default function CostaVoyageApp() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setViewingBooking(booking)}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setEditingBooking(booking)}>
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit Booking
                               </DropdownMenuItem>
+                              {booking.status !== "cancelled" && (
+                                <DropdownMenuItem onClick={() => handleCancelBooking(booking.id)}>
+                                  <X className="w-4 h-4 mr-2" />
+                                  Cancel Booking
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-red-600">
+                              <DropdownMenuItem className="text-red-600" onClick={() => setDeletingBooking(booking)}>
                                 <Trash2 className="w-4 h-4 mr-2" />
-                                Cancel Booking
+                                Delete Booking
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -1037,24 +1137,71 @@ export default function CostaVoyageApp() {
                 <CardContent className="space-y-4">
                   <p className="text-sm text-gray-600">Export booking data and reports</p>
                   <div className="space-y-2">
-                    <Button
-                      className="w-full bg-transparent"
-                      variant="outline"
-                      onClick={() => handleExportData("excel", "bookings")}
-                      disabled={syncStatus === "syncing"}
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      Export Bookings to Excel
-                    </Button>
-                    <Button
-                      className="w-full bg-transparent"
-                      variant="outline"
-                      onClick={() => handleExportData("excel", "hotels")}
-                      disabled={syncStatus === "syncing"}
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      Export Hotels to Excel
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("excel", "bookings")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Excel
+                      </Button>
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("pdf", "bookings")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        PDF
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500">Bookings Export</p>
+
+                    <div className="flex space-x-2">
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("excel", "hotels")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Excel
+                      </Button>
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("pdf", "hotels")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        PDF
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500">Hotels Export</p>
+
+                    <div className="flex space-x-2">
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("excel", "cities")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Excel
+                      </Button>
+                      <Button
+                        className="flex-1 bg-transparent"
+                        variant="outline"
+                        onClick={() => handleExportData("pdf", "cities")}
+                        disabled={syncStatus === "syncing"}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        PDF
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500">Cities Export</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1144,6 +1291,236 @@ export default function CostaVoyageApp() {
           </div>
         )}
       </main>
+
+      {/* Edit Booking Dialog */}
+      <Dialog open={!!editingBooking} onOpenChange={() => setEditingBooking(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Booking</DialogTitle>
+            <DialogDescription>Update booking information</DialogDescription>
+          </DialogHeader>
+          {editingBooking && (
+            <form action={handleEditBooking}>
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-agency">Travel Agency</Label>
+                  <Input
+                    id="edit-agency"
+                    name="agency"
+                    defaultValue={editingBooking.agency}
+                    placeholder="Enter agency name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-hotel">Hotel</Label>
+                  <Select name="hotel" defaultValue={editingBooking.hotel} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select hotel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {hotels.map((hotel) => (
+                        <SelectItem key={hotel.id} value={hotel.name}>
+                          {hotel.name} - {hotel.city}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-city">City</Label>
+                  <Select name="city" defaultValue={editingBooking.city} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeCities.map((city) => (
+                        <SelectItem key={city.id} value={city.name}>
+                          {city.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-checkin">Check-in Date</Label>
+                  <Input id="edit-checkin" name="checkin" type="date" defaultValue={editingBooking.checkIn} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-checkout">Check-out Date</Label>
+                  <Input
+                    id="edit-checkout"
+                    name="checkout"
+                    type="date"
+                    defaultValue={editingBooking.checkOut}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-rooms">Number of Rooms</Label>
+                  <Input
+                    id="edit-rooms"
+                    name="rooms"
+                    type="number"
+                    defaultValue={editingBooking.rooms}
+                    placeholder="Enter number of rooms"
+                    min="1"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-guests">Number of Guests</Label>
+                  <Input
+                    id="edit-guests"
+                    name="guests"
+                    type="number"
+                    defaultValue={editingBooking.guests}
+                    placeholder="Enter guest count"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-status">Booking Status</Label>
+                  <Select name="status" defaultValue={editingBooking.status} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="confirmed">Confirmed</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="edit-notes">Special Requests</Label>
+                  <Textarea
+                    id="edit-notes"
+                    name="notes"
+                    defaultValue={editingBooking.notes || ""}
+                    placeholder="Any special requirements or notes..."
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button type="button" variant="outline" onClick={() => setEditingBooking(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                  Update Booking
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Booking Details Dialog */}
+      <Dialog open={!!viewingBooking} onOpenChange={() => setViewingBooking(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Booking Details</DialogTitle>
+            <DialogDescription>Complete booking information</DialogDescription>
+          </DialogHeader>
+          {viewingBooking && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Booking ID</Label>
+                    <p className="text-lg font-semibold">{viewingBooking.id}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Travel Agency</Label>
+                    <p className="text-lg">{viewingBooking.agency}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Hotel</Label>
+                    <p className="text-lg">{viewingBooking.hotel}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">City</Label>
+                    <p className="text-lg flex items-center">
+                      <MapPin className="w-4 h-4 mr-1 text-blue-600" />
+                      {viewingBooking.city}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Check-in Date</Label>
+                    <p className="text-lg">{viewingBooking.checkIn}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Check-out Date</Label>
+                    <p className="text-lg">{viewingBooking.checkOut}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Rooms & Guests</Label>
+                    <p className="text-lg flex items-center space-x-4">
+                      <span className="flex items-center">
+                        <Building2 className="w-4 h-4 mr-1 text-gray-500" />
+                        {viewingBooking.rooms} rooms
+                      </span>
+                      <span className="flex items-center">
+                        <Users className="w-4 h-4 mr-1 text-gray-500" />
+                        {viewingBooking.guests} guests
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Status</Label>
+                    <div className="mt-1">
+                      <Badge
+                        variant={
+                          viewingBooking.status === "confirmed"
+                            ? "default"
+                            : viewingBooking.status === "cancelled"
+                              ? "destructive"
+                              : "secondary"
+                        }
+                      >
+                        {viewingBooking.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {viewingBooking.notes && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">Special Requests</Label>
+                  <p className="text-lg mt-1 p-3 bg-gray-50 rounded-md">{viewingBooking.notes}</p>
+                </div>
+              )}
+              <div>
+                <Label className="text-sm font-medium text-gray-500">Created At</Label>
+                <p className="text-lg">{new Date(viewingBooking.createdAt).toLocaleString()}</p>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={() => setViewingBooking(null)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Booking Confirmation Dialog */}
+      <AlertDialog open={!!deletingBooking} onOpenChange={() => setDeletingBooking(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Booking</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete booking "{deletingBooking?.id}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteBooking} className="bg-red-600 hover:bg-red-700">
+              Delete Booking
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit City Dialog */}
       <Dialog open={!!editingCity} onOpenChange={() => setEditingCity(null)}>
