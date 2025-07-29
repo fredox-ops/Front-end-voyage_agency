@@ -2,10 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Pool } from "pg"
 
 const pool = new Pool({
-  user: "postgres", // Change this to your PostgreSQL username
+  user: "postgres",
   host: "localhost",
-  database: "costa_voyage", // Change this to your database name
-  password: "mohamedrt133", // Change this to your PostgreSQL password
+  database: "costa_voyage",
+  password: "mohamedrt133",
   port: 5432,
 })
 

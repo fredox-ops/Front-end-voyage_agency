@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect()
     const result = await client.query(
       `
-      INSERT INTO hotels (name, city, rating, phone, address, amenities, description)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO hotels (name, city, rating, phone, address, amenities, description, image)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING 
         id,
         name,
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         image,
         created_at as "createdAt"
     `,
-      [name, city, rating, phone, address, amenities, description],
+      [name, city, rating, phone, address, amenities, description, "/placeholder.svg?height=200&width=300"],
     )
 
     client.release()

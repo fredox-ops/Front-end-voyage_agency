@@ -83,6 +83,7 @@ interface Hotel {
   phone?: string
   address?: string
   description?: string
+  createdAt: string
 }
 
 interface City {
@@ -111,6 +112,9 @@ export default function CostaVoyageApp() {
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null)
   const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null)
+  const [editingHotel, setEditingHotel] = useState<Hotel | null>(null)
+  const [viewingHotel, setViewingHotel] = useState<Hotel | null>(null)
+  const [deletingHotel, setDeletingHotel] = useState<Hotel | null>(null)
 
   // Load data on component mount
   useEffect(() => {
@@ -118,6 +122,18 @@ export default function CostaVoyageApp() {
     loadHotels()
     loadCities()
   }, [])
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return date.toLocaleDateString()
+  }
+
+  const formatDateTime = (dateString: string) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return date.toLocaleString()
+  }
 
   const loadBookings = async () => {
     try {
@@ -302,6 +318,62 @@ export default function CostaVoyageApp() {
     }
   }
 
+  const handleEditHotel = async (formData: FormData) => {
+    if (!editingHotel) return
+
+    const updatedHotel = {
+      name: formData.get("hotel-name") as string,
+      city: formData.get("hotel-city") as string,
+      rating: Number.parseInt(formData.get("hotel-rating") as string),
+      phone: formData.get("hotel-phone") as string,
+      address: formData.get("hotel-address") as string,
+      amenities: (formData.get("hotel-amenities") as string).split(",").map((a) => a.trim()),
+      description: formData.get("hotel-description") as string,
+    }
+
+    try {
+      const response = await fetch(`/api/hotels/${editingHotel.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedHotel),
+      })
+
+      if (response.ok) {
+        const hotel = await response.json()
+        setHotels((prev) => prev.map((h) => (h.id === editingHotel.id ? hotel : h)))
+        setEditingHotel(null)
+        toast({ title: "Success", description: "Hotel updated successfully!" })
+      } else {
+        throw new Error("Failed to update hotel")
+      }
+    } catch (error) {
+      console.error("Error updating hotel:", error)
+      toast({ title: "Error", description: "Failed to update hotel", variant: "destructive" })
+    }
+  }
+
+  const handleDeleteHotel = async () => {
+    if (!deletingHotel) return
+
+    try {
+      const response = await fetch(`/api/hotels/${deletingHotel.id}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        setHotels((prev) => prev.filter((h) => h.id !== deletingHotel.id))
+        setDeletingHotel(null)
+        toast({ title: "Success", description: "Hotel deleted successfully!" })
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Failed to delete hotel")
+      }
+    } catch (error) {
+      console.error("Error deleting hotel:", error)
+      toast({ title: "Error", description: error.message || "Failed to delete hotel", variant: "destructive" })
+    }
+  }
+
   const handleAddCity = async (formData: FormData) => {
     const cityData = {
       name: formData.get("city-name") as string,
@@ -449,6 +521,13 @@ export default function CostaVoyageApp() {
     return matchesSearch && matchesCity
   })
 
+  const filteredCities = cities.filter((city) => {
+    const matchesSearch =
+      city.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      city.country.toLowerCase().includes(searchTerm.toLowerCase())
+    return matchesSearch
+  })
+
   const activeCities = cities.filter((city) => city.isActive)
 
   return (
@@ -481,12 +560,12 @@ export default function CostaVoyageApp() {
                 Hotels
               </Button>
               <Button
-                variant={activeTab === "tours" ? "secondary" : "ghost"}
-                onClick={() => setActiveTab("tours")}
+                variant={activeTab === "cities" ? "secondary" : "ghost"}
+                onClick={() => setActiveTab("cities")}
                 className="text-white hover:bg-blue-700"
               >
-                <MapPin className="w-4 h-4 mr-2" />
-                Tours
+                <Globe className="w-4 h-4 mr-2" />
+                Cities
               </Button>
               <Button
                 variant={activeTab === "admin" ? "secondary" : "ghost"}
@@ -516,32 +595,55 @@ export default function CostaVoyageApp() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Search and Filter Bar - Only on Bookings Page */}
-        {activeTab === "bookings" && (
+        {/* Search and Filter Bar - Only on Bookings and Hotels Pages */}
+        {(activeTab === "bookings" || activeTab === "hotels") && (
           <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
             <div className="flex flex-col md:flex-row gap-4 items-center">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  placeholder="Search bookings, hotels, or agencies..."
+                  placeholder={`Search ${activeTab}...`}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
-              <Select value={selectedCity} onValueChange={setSelectedCity}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by city" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Cities</SelectItem>
-                  {activeCities.map((city) => (
-                    <SelectItem key={city.id} value={city.name}>
-                      {city.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {activeTab !== "cities" && (
+                <Select value={selectedCity} onValueChange={setSelectedCity}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Cities</SelectItem>
+                    {activeCities.map((city) => (
+                      <SelectItem key={city.id} value={city.name}>
+                        {city.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Filter className="w-4 h-4 mr-2" />
+                Filter
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Cities Search Bar */}
+        {activeTab === "cities" && (
+          <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search cities or countries..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
               <Button className="bg-blue-600 hover:bg-blue-700">
                 <Filter className="w-4 h-4 mr-2" />
                 Filter
@@ -690,8 +792,8 @@ export default function CostaVoyageApp() {
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
-                            <div>{booking.checkIn}</div>
-                            <div className="text-gray-500">to {booking.checkOut}</div>
+                            <div>{formatDate(booking.checkIn)}</div>
+                            <div className="text-gray-500">to {formatDate(booking.checkOut)}</div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -847,172 +949,128 @@ export default function CostaVoyageApp() {
               </Dialog>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredHotels.map((hotel) => (
-                <Card key={hotel.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="aspect-video relative">
-                    <img
-                      src={hotel.image || "/placeholder.svg?height=200&width=300"}
-                      alt={hotel.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-4 right-4">
-                      <Badge className="bg-blue-600">{"★".repeat(hotel.rating)}</Badge>
-                    </div>
-                  </div>
-                  <CardHeader>
-                    <CardTitle>{hotel.name}</CardTitle>
-                    <CardDescription className="flex items-center">
-                      <MapPin className="w-4 h-4 mr-1" />
-                      {hotel.city}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {hotel.amenities.map((amenity, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {amenity}
-                        </Badge>
-                      ))}
-                    </div>
-                    <Button className="w-full bg-blue-600 hover:bg-blue-700">Book Now</Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tours Tab */}
-        {activeTab === "tours" && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-3xl font-bold text-gray-900">Tour Packages</h2>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Tour
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="hover:shadow-lg transition-shadow">
-                <div className="aspect-video relative">
-                  <img
-                    src="/placeholder.svg?height=200&width=400"
-                    alt="Santorini Sunset Tour"
-                    className="w-full h-full object-cover rounded-t-lg"
-                  />
-                </div>
-                <CardHeader>
-                  <CardTitle>Santorini Sunset & Wine Tour</CardTitle>
-                  <CardDescription>Experience the famous Santorini sunset with local wine tasting</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Duration:</span>
-                      <span>6 hours</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Group Size:</span>
-                      <span>Max 12 people</span>
-                    </div>
-                  </div>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700">View Details</Button>
-                </CardContent>
-              </Card>
-
-              <Card className="hover:shadow-lg transition-shadow">
-                <div className="aspect-video relative">
-                  <img
-                    src="/placeholder.svg?height=200&width=400"
-                    alt="Mykonos Island Hopping"
-                    className="w-full h-full object-cover rounded-t-lg"
-                  />
-                </div>
-                <CardHeader>
-                  <CardTitle>Mykonos Island Hopping Adventure</CardTitle>
-                  <CardDescription>Discover hidden beaches and traditional villages</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Duration:</span>
-                      <span>Full Day</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Group Size:</span>
-                      <span>Max 20 people</span>
-                    </div>
-                  </div>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700">View Details</Button>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* Admin Tab */}
-        {activeTab === "admin" && (
-          <div className="space-y-6">
-            <h2 className="text-3xl font-bold text-gray-900">System Administration</h2>
-
-            {/* Cities Management Section */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <Globe className="w-5 h-5 mr-2 text-blue-600" />
-                    Cities Management
-                  </div>
-                  <Dialog open={isCityDialogOpen} onOpenChange={setIsCityDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="bg-blue-600 hover:bg-blue-700">
-                        <Plus className="w-4 h-4 mr-2" />
+                <CardTitle>All Hotels</CardTitle>
+                <CardDescription>Manage hotel directory and information</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Hotel Name</TableHead>
+                      <TableHead>City</TableHead>
+                      <TableHead>Rating</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredHotels.map((hotel) => (
+                      <TableRow key={hotel.id}>
+                        <TableCell className="font-medium">{hotel.name}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center">
+                            <MapPin className="w-4 h-4 mr-1 text-blue-600" />
+                            {hotel.city}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className="bg-blue-600">{"★".repeat(hotel.rating)}</Badge>
+                        </TableCell>
+                        <TableCell>{hotel.phone}</TableCell>
+                        <TableCell>{formatDate(hotel.createdAt)}</TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <Settings className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => setViewingHotel(hotel)}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setEditingHotel(hotel)}>
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit Hotel
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-red-600" onClick={() => setDeletingHotel(hotel)}>
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Hotel
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Cities Tab */}
+        {activeTab === "cities" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-3xl font-bold text-gray-900">Cities Management</h2>
+              <Dialog open={isCityDialogOpen} onOpenChange={setIsCityDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-700">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add City
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Add New City</DialogTitle>
+                    <DialogDescription>Add a new destination city to the system</DialogDescription>
+                  </DialogHeader>
+                  <form action={handleAddCity}>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="city-name">City Name</Label>
+                        <Input id="city-name" name="city-name" placeholder="Enter city name" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="city-country">Country</Label>
+                        <Input id="city-country" name="city-country" placeholder="Enter country" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="city-description">Description</Label>
+                        <Textarea
+                          id="city-description"
+                          name="city-description"
+                          placeholder="Enter city description"
+                          required
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch id="city-active" name="city-active" defaultChecked />
+                        <Label htmlFor="city-active">Active</Label>
+                      </div>
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                      <Button type="button" variant="outline" onClick={() => setIsCityDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
                         Add City
                       </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-lg">
-                      <DialogHeader>
-                        <DialogTitle>Add New City</DialogTitle>
-                        <DialogDescription>Add a new destination city to the system</DialogDescription>
-                      </DialogHeader>
-                      <form action={handleAddCity}>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="city-name">City Name</Label>
-                            <Input id="city-name" name="city-name" placeholder="Enter city name" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="city-country">Country</Label>
-                            <Input id="city-country" name="city-country" placeholder="Enter country" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="city-description">Description</Label>
-                            <Textarea
-                              id="city-description"
-                              name="city-description"
-                              placeholder="Enter city description"
-                              required
-                            />
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Switch id="city-active" name="city-active" defaultChecked />
-                            <Label htmlFor="city-active">Active</Label>
-                          </div>
-                        </div>
-                        <div className="flex justify-end space-x-2">
-                          <Button type="button" variant="outline" onClick={() => setIsCityDialogOpen(false)}>
-                            Cancel
-                          </Button>
-                          <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                            Add City
-                          </Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </CardTitle>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>All Cities</CardTitle>
                 <CardDescription>Manage destination cities for hotels and tours</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1027,7 +1085,7 @@ export default function CostaVoyageApp() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {cities.map((city) => (
+                    {filteredCities.map((city) => (
                       <TableRow key={city.id}>
                         <TableCell className="font-medium">{city.name}</TableCell>
                         <TableCell>{city.country}</TableCell>
@@ -1036,7 +1094,7 @@ export default function CostaVoyageApp() {
                             {city.isActive ? "Active" : "Inactive"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{new Date(city.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDate(city.createdAt)}</TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
                             <Button variant="ghost" size="sm" onClick={() => setEditingCity(city)}>
@@ -1058,6 +1116,13 @@ export default function CostaVoyageApp() {
                 </Table>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* Admin Tab */}
+        {activeTab === "admin" && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold text-gray-900">System Administration</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* Sync Status Card */}
@@ -1449,11 +1514,11 @@ export default function CostaVoyageApp() {
                 <div className="space-y-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Check-in Date</Label>
-                    <p className="text-lg">{viewingBooking.checkIn}</p>
+                    <p className="text-lg">{formatDate(viewingBooking.checkIn)}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Check-out Date</Label>
-                    <p className="text-lg">{viewingBooking.checkOut}</p>
+                    <p className="text-lg">{formatDate(viewingBooking.checkOut)}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Rooms & Guests</Label>
@@ -1494,7 +1559,7 @@ export default function CostaVoyageApp() {
               )}
               <div>
                 <Label className="text-sm font-medium text-gray-500">Created At</Label>
-                <p className="text-lg">{new Date(viewingBooking.createdAt).toLocaleString()}</p>
+                <p className="text-lg">{formatDateTime(viewingBooking.createdAt)}</p>
               </div>
             </div>
           )}
@@ -1517,6 +1582,197 @@ export default function CostaVoyageApp() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteBooking} className="bg-red-600 hover:bg-red-700">
               Delete Booking
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Hotel Dialog */}
+      <Dialog open={!!editingHotel} onOpenChange={() => setEditingHotel(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Hotel</DialogTitle>
+            <DialogDescription>Update hotel information</DialogDescription>
+          </DialogHeader>
+          {editingHotel && (
+            <form action={handleEditHotel}>
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-hotel-name">Hotel Name</Label>
+                  <Input
+                    id="edit-hotel-name"
+                    name="hotel-name"
+                    defaultValue={editingHotel.name}
+                    placeholder="Enter hotel name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-hotel-city">City</Label>
+                  <Select name="hotel-city" defaultValue={editingHotel.city} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeCities.map((city) => (
+                        <SelectItem key={city.id} value={city.name}>
+                          {city.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-hotel-rating">Star Rating</Label>
+                  <Select name="hotel-rating" defaultValue={editingHotel.rating.toString()} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 Star</SelectItem>
+                      <SelectItem value="2">2 Stars</SelectItem>
+                      <SelectItem value="3">3 Stars</SelectItem>
+                      <SelectItem value="4">4 Stars</SelectItem>
+                      <SelectItem value="5">5 Stars</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-hotel-phone">Phone Number</Label>
+                  <Input
+                    id="edit-hotel-phone"
+                    name="hotel-phone"
+                    defaultValue={editingHotel.phone}
+                    placeholder="Enter phone number"
+                    required
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="edit-hotel-address">Address</Label>
+                  <Input
+                    id="edit-hotel-address"
+                    name="hotel-address"
+                    defaultValue={editingHotel.address}
+                    placeholder="Enter hotel address"
+                    required
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="edit-hotel-amenities">Amenities</Label>
+                  <Textarea
+                    id="edit-hotel-amenities"
+                    name="hotel-amenities"
+                    defaultValue={editingHotel.amenities.join(", ")}
+                    placeholder="Enter amenities (separated by commas)"
+                    required
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="edit-hotel-description">Description</Label>
+                  <Textarea
+                    id="edit-hotel-description"
+                    name="hotel-description"
+                    defaultValue={editingHotel.description}
+                    placeholder="Enter hotel description"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button type="button" variant="outline" onClick={() => setEditingHotel(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                  Update Hotel
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Hotel Details Dialog */}
+      <Dialog open={!!viewingHotel} onOpenChange={() => setViewingHotel(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Hotel Details</DialogTitle>
+            <DialogDescription>Complete hotel information</DialogDescription>
+          </DialogHeader>
+          {viewingHotel && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Hotel Name</Label>
+                    <p className="text-lg font-semibold">{viewingHotel.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">City</Label>
+                    <p className="text-lg flex items-center">
+                      <MapPin className="w-4 h-4 mr-1 text-blue-600" />
+                      {viewingHotel.city}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Rating</Label>
+                    <p className="text-lg">
+                      <Badge className="bg-blue-600">{"★".repeat(viewingHotel.rating)}</Badge>
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Phone</Label>
+                    <p className="text-lg">{viewingHotel.phone}</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Address</Label>
+                    <p className="text-lg">{viewingHotel.address}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Created At</Label>
+                    <p className="text-lg">{formatDateTime(viewingHotel.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-gray-500">Amenities</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {viewingHotel.amenities.map((amenity, index) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {amenity}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              {viewingHotel.description && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">Description</Label>
+                  <p className="text-lg mt-1 p-3 bg-gray-50 rounded-md">{viewingHotel.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={() => setViewingHotel(null)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Hotel Confirmation Dialog */}
+      <AlertDialog open={!!deletingHotel} onOpenChange={() => setDeletingHotel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Hotel</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingHotel?.name}"? This action cannot be undone and will affect all
+              related bookings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteHotel} className="bg-red-600 hover:bg-red-700">
+              Delete Hotel
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

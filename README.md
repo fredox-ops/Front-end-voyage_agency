@@ -178,4 +178,4 @@ The system includes automated backup functionality:
 
 ## License
 
-© 2025  Travel Management System. All rights reserved. Mohammed arousse
+© 2024 Costa Voyage Travel Management System. All rights reserved.

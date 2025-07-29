@@ -20,81 +20,154 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
     const client = await pool.connect()
     let result
     let filename
+    let headers
 
-    if (type === "bookings") {
-      result = await client.query(`
-        SELECT 
-          id as "Booking ID",
-          agency as "Agency",
-          hotel as "Hotel",
-          city as "City",
-          check_in as "Check In",
-          check_out as "Check Out",
-          rooms as "Rooms",
-          guests as "Guests",
-          status as "Status",
-          notes as "Notes",
-          created_at as "Created At"
-        FROM bookings 
-        ORDER BY created_at DESC
-      `)
-      filename = "bookings_export"
-    } else if (type === "hotels") {
-      result = await client.query(`
-        SELECT 
-          id as "Hotel ID",
-          name as "Name",
-          city as "City",
-          rating as "Rating",
-          phone as "Phone",
-          address as "Address",
-          amenities as "Amenities",
-          description as "Description",
-          created_at as "Created At"
-        FROM hotels 
-        ORDER BY created_at DESC
-      `)
-      filename = "hotels_export"
-    } else if (type === "cities") {
-      result = await client.query(`
-        SELECT 
-          id as "City ID",
-          name as "Name",
-          country as "Country",
-          description as "Description",
-          is_active as "Active",
-          created_at as "Created At"
-        FROM cities 
-        ORDER BY created_at DESC
-      `)
-      filename = "cities_export"
-    } else {
-      client.release()
-      return NextResponse.json({ error: "Invalid export type" }, { status: 400 })
+    switch (type) {
+      case "bookings":
+        result = await client.query(`
+          SELECT 
+            id as "Booking ID",
+            agency as "Agency",
+            hotel as "Hotel",
+            city as "City",
+            check_in as "Check In",
+            check_out as "Check Out",
+            rooms as "Rooms",
+            guests as "Guests",
+            status as "Status",
+            notes as "Notes",
+            created_at as "Created At"
+          FROM bookings 
+          ORDER BY created_at DESC
+        `)
+        filename = "bookings_export"
+        headers = [
+          "Booking ID",
+          "Agency",
+          "Hotel",
+          "City",
+          "Check In",
+          "Check Out",
+          "Rooms",
+          "Guests",
+          "Status",
+          "Notes",
+          "Created At",
+        ]
+        break
+
+      case "hotels":
+        result = await client.query(`
+          SELECT 
+            id as "Hotel ID",
+            name as "Hotel Name",
+            city as "City",
+            rating as "Rating",
+            phone as "Phone",
+            address as "Address",
+            amenities as "Amenities",
+            description as "Description",
+            created_at as "Created At"
+          FROM hotels 
+          ORDER BY created_at DESC
+        `)
+        filename = "hotels_export"
+        headers = [
+          "Hotel ID",
+          "Hotel Name",
+          "City",
+          "Rating",
+          "Phone",
+          "Address",
+          "Amenities",
+          "Description",
+          "Created At",
+        ]
+        break
+
+      case "cities":
+        result = await client.query(`
+          SELECT 
+            id as "City ID",
+            name as "City Name",
+            country as "Country",
+            description as "Description",
+            is_active as "Active",
+            created_at as "Created At"
+          FROM cities 
+          ORDER BY created_at DESC
+        `)
+        filename = "cities_export"
+        headers = ["City ID", "City Name", "Country", "Description", "Active", "Created At"]
+        break
+
+      default:
+        client.release()
+        return NextResponse.json({ error: "Invalid export type" }, { status: 400 })
     }
 
     client.release()
 
-    if (format === "excel") {
-      // Create Excel file
-      const ws = XLSX.utils.json_to_sheet(result.rows)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, type)
-
-      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" })
-
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
-        },
-      })
-    } else if (format === "pdf") {
-      // Create PDF file
+    if (format === "pdf") {
+      // Generate PDF
       const doc = new PDFDocument({ margin: 50 })
       const chunks: Buffer[] = []
 
       doc.on("data", (chunk) => chunks.push(chunk))
+      doc.on("end", () => {})
+
+      // Add title
+      doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Export`, { align: "center" })
+      doc.moveDown()
+
+      // Add date
+      doc.fontSize(12).text(`Generated on: ${new Date().toLocaleString()}`, { align: "right" })
+      doc.moveDown()
+
+      // Add table headers
+      const startY = doc.y
+      let currentY = startY
+      const rowHeight = 20
+      const colWidth = 70
+
+      // Draw headers
+      doc.fontSize(10).fillColor("black")
+      headers.forEach((header, index) => {
+        doc.text(header, 50 + index * colWidth, currentY, { width: colWidth - 5, ellipsis: true })
+      })
+
+      currentY += rowHeight
+      doc
+        .moveTo(50, currentY)
+        .lineTo(50 + headers.length * colWidth, currentY)
+        .stroke()
+
+      // Add data rows
+      result.rows.forEach((row, rowIndex) => {
+        if (currentY > 700) {
+          doc.addPage()
+          currentY = 50
+        }
+
+        headers.forEach((header, colIndex) => {
+          let value = row[header]
+          if (value instanceof Date) {
+            value = value.toLocaleDateString()
+          } else if (Array.isArray(value)) {
+            value = value.join(", ")
+          } else if (value === null || value === undefined) {
+            value = ""
+          } else {
+            value = String(value)
+          }
+
+          doc.text(value, 50 + colIndex * colWidth, currentY, { width: colWidth - 5, ellipsis: true })
+        })
+
+        currentY += rowHeight
+      })
+
+      doc.end()
 
       return new Promise((resolve) => {
         doc.on("end", () => {
@@ -108,51 +181,23 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
             }),
           )
         })
+      })
+    } else if (format === "excel") {
+      // Generate Excel
+      const worksheet = XLSX.utils.json_to_sheet(result.rows)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, type)
 
-        // PDF Header
-        doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Report`, { align: "center" })
-        doc.moveDown()
-        doc.fontSize(12).text(`Generated on: ${new Date().toLocaleString()}`, { align: "center" })
-        doc.moveDown(2)
+      const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
 
-        if (result.rows.length === 0) {
-          doc.text("No data available", { align: "center" })
-        } else {
-          // Table headers
-          const headers = Object.keys(result.rows[0])
-          let yPosition = doc.y
-
-          // Draw headers
-          doc.fontSize(10).fillColor("black")
-          headers.forEach((header, index) => {
-            doc.text(header, 50 + index * 80, yPosition, { width: 75 })
-          })
-
-          yPosition += 20
-          doc.moveTo(50, yPosition).lineTo(550, yPosition).stroke()
-          yPosition += 10
-
-          // Draw data rows
-          result.rows.forEach((row, rowIndex) => {
-            if (yPosition > 700) {
-              // New page if needed
-              doc.addPage()
-              yPosition = 50
-            }
-
-            headers.forEach((header, colIndex) => {
-              const value = row[header] ? String(row[header]) : ""
-              doc.text(value.substring(0, 15), 50 + colIndex * 80, yPosition, { width: 75 })
-            })
-            yPosition += 15
-          })
-        }
-
-        doc.end()
+      return new NextResponse(excelBuffer, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
+        },
       })
     } else {
       // CSV format
-      const headers = Object.keys(result.rows[0] || {})
       const csvContent = [
         headers.join(","),
         ...result.rows.map((row) => headers.map((header) => `"${row[header] || ""}"`).join(",")),
@@ -167,6 +212,6 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
     }
   } catch (error) {
     console.error("Export error:", error)
-    return NextResponse.json({ error: "Export failed" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to export data" }, { status: 500 })
   }
 }

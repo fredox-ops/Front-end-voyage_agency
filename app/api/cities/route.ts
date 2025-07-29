@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect()
     const result = await client.query(
       `
-      INSERT INTO cities (name, country, description, is_active)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO cities (name, country, description, is_active, image)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING 
         id,
         name,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         is_active as "isActive",
         created_at as "createdAt"
     `,
-      [name, country, description, isActive],
+      [name, country, description, isActive, "/placeholder.svg?height=200&width=300"],
     )
 
     client.release()

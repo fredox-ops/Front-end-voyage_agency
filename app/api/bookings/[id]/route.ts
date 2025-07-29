@@ -92,7 +92,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     const client = await pool.connect()
     const result = await client.query("DELETE FROM bookings WHERE id = $1 RETURNING id", [bookingId])
-
     client.release()
 
     if (result.rows.length === 0) {
