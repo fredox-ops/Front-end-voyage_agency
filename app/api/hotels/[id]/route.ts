@@ -19,8 +19,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const result = await client.query(
       `
       UPDATE hotels 
-      SET name = $1, city = $2, rating = $3, phone = $4, address = $5, 
-          amenities = $6, description = $7, updated_at = CURRENT_TIMESTAMP
+      SET name = $1, city = $2, rating = $3, phone = $4, address = $5, amenities = $6, description = $7
       WHERE id = $8
       RETURNING 
         id,
@@ -53,30 +52,24 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const hotelId = params.id
-
     const client = await pool.connect()
 
-    // Check if hotel is used in bookings
-    const usageCheck = await client.query(
-      `SELECT COUNT(*) as booking_count FROM bookings WHERE hotel = (SELECT name FROM hotels WHERE id = $1)`,
+    // Check if hotel is referenced in bookings
+    const bookingCheck = await client.query(
+      "SELECT COUNT(*) as count FROM bookings WHERE hotel = (SELECT name FROM hotels WHERE id = $1)",
       [hotelId],
     )
 
-    const { booking_count } = usageCheck.rows[0]
-
-    if (booking_count > 0) {
+    if (Number.parseInt(bookingCheck.rows[0].count) > 0) {
       client.release()
       return NextResponse.json(
-        {
-          error: "Cannot delete hotel",
-          message: `Hotel is used in ${booking_count} bookings. Please remove these references first.`,
-        },
+        { message: "Cannot delete hotel. It is referenced in existing bookings." },
         { status: 400 },
       )
     }
 
     // Delete the hotel
-    const result = await client.query("DELETE FROM hotels WHERE id = $1 RETURNING id", [hotelId])
+    const result = await client.query("DELETE FROM hotels WHERE id = $1 RETURNING *", [hotelId])
 
     client.release()
 

@@ -21,6 +21,7 @@ import {
   Shield,
   Globe,
   X,
+  CalendarDays,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,6 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { toast } from "@/hooks/use-toast"
 
 interface Booking {
@@ -96,11 +98,29 @@ interface City {
   createdAt: string
 }
 
+interface DateFilters {
+  checkInFrom: string
+  checkInTo: string
+  checkOutFrom: string
+  checkOutTo: string
+  createdFrom: string
+  createdTo: string
+}
+
 export default function CostaVoyageApp() {
   const [activeTab, setActiveTab] = useState("bookings")
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing">("synced")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCity, setSelectedCity] = useState("all")
+  const [selectedStatus, setSelectedStatus] = useState("all")
+  const [dateFilters, setDateFilters] = useState<DateFilters>({
+    checkInFrom: "",
+    checkInTo: "",
+    checkOutFrom: "",
+    checkOutTo: "",
+    createdFrom: "",
+    createdTo: "",
+  })
   const [bookings, setBookings] = useState<Booking[]>([])
   const [hotels, setHotels] = useState<Hotel[]>([])
   const [cities, setCities] = useState<City[]>([])
@@ -115,6 +135,7 @@ export default function CostaVoyageApp() {
   const [editingHotel, setEditingHotel] = useState<Hotel | null>(null)
   const [viewingHotel, setViewingHotel] = useState<Hotel | null>(null)
   const [deletingHotel, setDeletingHotel] = useState<Hotel | null>(null)
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false)
 
   // Load data on component mount
   useEffect(() => {
@@ -133,6 +154,36 @@ export default function CostaVoyageApp() {
     if (!dateString) return ""
     const date = new Date(dateString)
     return date.toLocaleString()
+  }
+
+  const isDateInRange = (dateString: string, fromDate: string, toDate: string) => {
+    if (!fromDate && !toDate) return true
+    const date = new Date(dateString)
+    const from = fromDate ? new Date(fromDate) : null
+    const to = toDate ? new Date(toDate) : null
+
+    if (from && to) {
+      return date >= from && date <= to
+    } else if (from) {
+      return date >= from
+    } else if (to) {
+      return date <= to
+    }
+    return true
+  }
+
+  const clearFilters = () => {
+    setSearchTerm("")
+    setSelectedCity("all")
+    setSelectedStatus("all")
+    setDateFilters({
+      checkInFrom: "",
+      checkInTo: "",
+      checkOutFrom: "",
+      checkOutTo: "",
+      createdFrom: "",
+      createdTo: "",
+    })
   }
 
   const loadBookings = async () => {
@@ -512,20 +563,31 @@ export default function CostaVoyageApp() {
       booking.agency.toLowerCase().includes(searchTerm.toLowerCase()) ||
       booking.hotel.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCity = selectedCity === "all" || booking.city === selectedCity
-    return matchesSearch && matchesCity
+    const matchesStatus = selectedStatus === "all" || booking.status === selectedStatus
+    const matchesCheckInDate = isDateInRange(booking.checkIn, dateFilters.checkInFrom, dateFilters.checkInTo)
+    const matchesCheckOutDate = isDateInRange(booking.checkOut, dateFilters.checkOutFrom, dateFilters.checkOutTo)
+    const matchesCreatedDate = isDateInRange(booking.createdAt, dateFilters.createdFrom, dateFilters.createdTo)
+
+    return (
+      matchesSearch && matchesCity && matchesStatus && matchesCheckInDate && matchesCheckOutDate && matchesCreatedDate
+    )
   })
 
   const filteredHotels = hotels.filter((hotel) => {
     const matchesSearch = hotel.name.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCity = selectedCity === "all" || hotel.city === selectedCity
-    return matchesSearch && matchesCity
+    const matchesCreatedDate = isDateInRange(hotel.createdAt, dateFilters.createdFrom, dateFilters.createdTo)
+
+    return matchesSearch && matchesCity && matchesCreatedDate
   })
 
   const filteredCities = cities.filter((city) => {
     const matchesSearch =
       city.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       city.country.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
+    const matchesCreatedDate = isDateInRange(city.createdAt, dateFilters.createdFrom, dateFilters.createdTo)
+
+    return matchesSearch && matchesCreatedDate
   })
 
   const activeCities = cities.filter((city) => city.isActive)
@@ -595,59 +657,212 @@ export default function CostaVoyageApp() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Search and Filter Bar - Only on Bookings and Hotels Pages */}
-        {(activeTab === "bookings" || activeTab === "hotels") && (
+        {/* Search and Filter Bar */}
+        {activeTab !== "admin" && (
           <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
-            <div className="flex flex-col md:flex-row gap-4 items-center">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder={`Search ${activeTab}...`}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              {activeTab !== "cities" && (
-                <Select value={selectedCity} onValueChange={setSelectedCity}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by city" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Cities</SelectItem>
-                    {activeCities.map((city) => (
-                      <SelectItem key={city.id} value={city.name}>
-                        {city.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Filter className="w-4 h-4 mr-2" />
-                Filter
-              </Button>
-            </div>
-          </div>
-        )}
+            <div className="flex flex-col gap-4">
+              {/* First Row - Search and Basic Filters */}
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder={`Search ${activeTab}...`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                {activeTab !== "cities" && (
+                  <Select value={selectedCity} onValueChange={setSelectedCity}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Filter by city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Cities</SelectItem>
+                      {activeCities.map((city) => (
+                        <SelectItem key={city.id} value={city.name}>
+                          {city.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {activeTab === "bookings" && (
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="confirmed">Confirmed</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600">
+                      <CalendarDays className="w-4 h-4 mr-2" />
+                      Date Filters
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-96" align="end">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium">Date Filters</h4>
+                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                          Clear All
+                        </Button>
+                      </div>
 
-        {/* Cities Search Bar */}
-        {activeTab === "cities" && (
-          <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
-            <div className="flex flex-col md:flex-row gap-4 items-center">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search cities or countries..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+                      {/* Created At Filter */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Created Date Range</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-500">From</Label>
+                            <Input
+                              type="date"
+                              value={dateFilters.createdFrom}
+                              onChange={(e) => setDateFilters((prev) => ({ ...prev, createdFrom: e.target.value }))}
+                              className="text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">To</Label>
+                            <Input
+                              type="date"
+                              value={dateFilters.createdTo}
+                              onChange={(e) => setDateFilters((prev) => ({ ...prev, createdTo: e.target.value }))}
+                              className="text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Booking-specific Date Filters */}
+                      {activeTab === "bookings" && (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Check-in Date Range</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs text-gray-500">From</Label>
+                                <Input
+                                  type="date"
+                                  value={dateFilters.checkInFrom}
+                                  onChange={(e) => setDateFilters((prev) => ({ ...prev, checkInFrom: e.target.value }))}
+                                  className="text-sm"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">To</Label>
+                                <Input
+                                  type="date"
+                                  value={dateFilters.checkInTo}
+                                  onChange={(e) => setDateFilters((prev) => ({ ...prev, checkInTo: e.target.value }))}
+                                  className="text-sm"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Check-out Date Range</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs text-gray-500">From</Label>
+                                <Input
+                                  type="date"
+                                  value={dateFilters.checkOutFrom}
+                                  onChange={(e) =>
+                                    setDateFilters((prev) => ({ ...prev, checkOutFrom: e.target.value }))
+                                  }
+                                  className="text-sm"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">To</Label>
+                                <Input
+                                  type="date"
+                                  value={dateFilters.checkOutTo}
+                                  onChange={(e) => setDateFilters((prev) => ({ ...prev, checkOutTo: e.target.value }))}
+                                  className="text-sm"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Filter className="w-4 h-4 mr-2" />
+                  Apply Filters
+                </Button>
               </div>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Filter className="w-4 h-4 mr-2" />
-                Filter
-              </Button>
+
+              {/* Active Filters Display */}
+              {(searchTerm ||
+                selectedCity !== "all" ||
+                selectedStatus !== "all" ||
+                dateFilters.createdFrom ||
+                dateFilters.createdTo ||
+                dateFilters.checkInFrom ||
+                dateFilters.checkInTo ||
+                dateFilters.checkOutFrom ||
+                dateFilters.checkOutTo) && (
+                <div className="flex flex-wrap gap-2 pt-2 border-t">
+                  <span className="text-sm text-gray-500">Active filters:</span>
+                  {searchTerm && (
+                    <Badge variant="secondary" className="text-xs">
+                      Search: {searchTerm}
+                      <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setSearchTerm("")} />
+                    </Badge>
+                  )}
+                  {selectedCity !== "all" && (
+                    <Badge variant="secondary" className="text-xs">
+                      City: {selectedCity}
+                      <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setSelectedCity("all")} />
+                    </Badge>
+                  )}
+                  {selectedStatus !== "all" && (
+                    <Badge variant="secondary" className="text-xs">
+                      Status: {selectedStatus}
+                      <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setSelectedStatus("all")} />
+                    </Badge>
+                  )}
+                  {(dateFilters.createdFrom || dateFilters.createdTo) && (
+                    <Badge variant="secondary" className="text-xs">
+                      Created: {dateFilters.createdFrom || "Start"} - {dateFilters.createdTo || "End"}
+                      <X
+                        className="w-3 h-3 ml-1 cursor-pointer"
+                        onClick={() => setDateFilters((prev) => ({ ...prev, createdFrom: "", createdTo: "" }))}
+                      />
+                    </Badge>
+                  )}
+                  {(dateFilters.checkInFrom || dateFilters.checkInTo) && (
+                    <Badge variant="secondary" className="text-xs">
+                      Check-in: {dateFilters.checkInFrom || "Start"} - {dateFilters.checkInTo || "End"}
+                      <X
+                        className="w-3 h-3 ml-1 cursor-pointer"
+                        onClick={() => setDateFilters((prev) => ({ ...prev, checkInFrom: "", checkInTo: "" }))}
+                      />
+                    </Badge>
+                  )}
+                  {(dateFilters.checkOutFrom || dateFilters.checkOutTo) && (
+                    <Badge variant="secondary" className="text-xs">
+                      Check-out: {dateFilters.checkOutFrom || "Start"} - {dateFilters.checkOutTo || "End"}
+                      <X
+                        className="w-3 h-3 ml-1 cursor-pointer"
+                        onClick={() => setDateFilters((prev) => ({ ...prev, checkOutFrom: "", checkOutTo: "" }))}
+                      />
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -761,7 +976,7 @@ export default function CostaVoyageApp() {
 
             <Card>
               <CardHeader>
-                <CardTitle>All Bookings</CardTitle>
+                <CardTitle>All Bookings ({filteredBookings.length})</CardTitle>
                 <CardDescription>Manage and track all hotel reservations</CardDescription>
               </CardHeader>
               <CardContent>
@@ -775,6 +990,7 @@ export default function CostaVoyageApp() {
                       <TableHead>Dates</TableHead>
                       <TableHead>Rooms/Guests</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Created</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -817,6 +1033,7 @@ export default function CostaVoyageApp() {
                             {booking.status}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-sm text-gray-500">{formatDate(booking.createdAt)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -951,7 +1168,7 @@ export default function CostaVoyageApp() {
 
             <Card>
               <CardHeader>
-                <CardTitle>All Hotels</CardTitle>
+                <CardTitle>All Hotels ({filteredHotels.length})</CardTitle>
                 <CardDescription>Manage hotel directory and information</CardDescription>
               </CardHeader>
               <CardContent>
@@ -980,7 +1197,7 @@ export default function CostaVoyageApp() {
                           <Badge className="bg-blue-600">{"★".repeat(hotel.rating)}</Badge>
                         </TableCell>
                         <TableCell>{hotel.phone}</TableCell>
-                        <TableCell>{formatDate(hotel.createdAt)}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{formatDate(hotel.createdAt)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -1070,7 +1287,7 @@ export default function CostaVoyageApp() {
 
             <Card>
               <CardHeader>
-                <CardTitle>All Cities</CardTitle>
+                <CardTitle>All Cities ({filteredCities.length})</CardTitle>
                 <CardDescription>Manage destination cities for hotels and tours</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1094,7 +1311,7 @@ export default function CostaVoyageApp() {
                             {city.isActive ? "Active" : "Inactive"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatDate(city.createdAt)}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{formatDate(city.createdAt)}</TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
                             <Button variant="ghost" size="sm" onClick={() => setEditingCity(city)}>

@@ -14,14 +14,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const body = await request.json()
     const bookingId = params.id
 
-    const client = await pool.connect()
-
-    // If only status is being updated (for cancel operation)
+    // Handle partial updates (like status changes)
     if (Object.keys(body).length === 1 && body.status) {
+      const client = await pool.connect()
       const result = await client.query(
         `
         UPDATE bookings 
-        SET status = $1, updated_at = CURRENT_TIMESTAMP
+        SET status = $1
         WHERE id = $2
         RETURNING 
           id,
@@ -48,14 +47,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json(result.rows[0])
     }
 
-    // Full update
+    // Handle full updates
     const { agency, hotel, city, checkIn, checkOut, rooms, guests, status, notes } = body
 
+    const client = await pool.connect()
     const result = await client.query(
       `
       UPDATE bookings 
-      SET agency = $1, hotel = $2, city = $3, check_in = $4, check_out = $5, 
-          rooms = $6, guests = $7, status = $8, notes = $9, updated_at = CURRENT_TIMESTAMP
+      SET agency = $1, hotel = $2, city = $3, check_in = $4, check_out = $5, rooms = $6, guests = $7, status = $8, notes = $9
       WHERE id = $10
       RETURNING 
         id,
@@ -89,9 +88,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const bookingId = params.id
-
     const client = await pool.connect()
-    const result = await client.query("DELETE FROM bookings WHERE id = $1 RETURNING id", [bookingId])
+
+    const result = await client.query("DELETE FROM bookings WHERE id = $1 RETURNING *", [bookingId])
+
     client.release()
 
     if (result.rows.length === 0) {

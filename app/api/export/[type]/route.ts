@@ -18,87 +18,70 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
     const type = params.type
 
     const client = await pool.connect()
-    let result
-    let filename
-    let headers
+    let data: any[] = []
+    let filename = ""
 
     switch (type) {
       case "bookings":
-        result = await client.query(`
+        const bookingsResult = await client.query(`
           SELECT 
-            id as "Booking ID",
-            agency as "Agency",
-            hotel as "Hotel",
-            city as "City",
-            check_in as "Check In",
-            check_out as "Check Out",
-            rooms as "Rooms",
-            guests as "Guests",
-            status as "Status",
-            notes as "Notes",
-            created_at as "Created At"
+            id,
+            agency,
+            hotel,
+            city,
+            check_in as "checkIn",
+            check_out as "checkOut",
+            rooms,
+            guests,
+            status,
+            notes,
+            created_at as "createdAt"
           FROM bookings 
           ORDER BY created_at DESC
         `)
+        data = bookingsResult.rows
         filename = "bookings_export"
-        headers = [
-          "Booking ID",
-          "Agency",
-          "Hotel",
-          "City",
-          "Check In",
-          "Check Out",
-          "Rooms",
-          "Guests",
-          "Status",
-          "Notes",
-          "Created At",
-        ]
         break
 
       case "hotels":
-        result = await client.query(`
+        const hotelsResult = await client.query(`
           SELECT 
-            id as "Hotel ID",
-            name as "Hotel Name",
-            city as "City",
-            rating as "Rating",
-            phone as "Phone",
-            address as "Address",
-            amenities as "Amenities",
-            description as "Description",
-            created_at as "Created At"
+            id,
+            name,
+            city,
+            rating,
+            phone,
+            address,
+            amenities,
+            description,
+            created_at as "createdAt"
           FROM hotels 
           ORDER BY created_at DESC
         `)
+        data = hotelsResult.rows.map((hotel) => ({
+          ...hotel,
+          amenities: Array.isArray(hotel.amenities) ? hotel.amenities.join(", ") : hotel.amenities,
+        }))
         filename = "hotels_export"
-        headers = [
-          "Hotel ID",
-          "Hotel Name",
-          "City",
-          "Rating",
-          "Phone",
-          "Address",
-          "Amenities",
-          "Description",
-          "Created At",
-        ]
         break
 
       case "cities":
-        result = await client.query(`
+        const citiesResult = await client.query(`
           SELECT 
-            id as "City ID",
-            name as "City Name",
-            country as "Country",
-            description as "Description",
-            is_active as "Active",
-            created_at as "Created At"
+            id,
+            name,
+            country,
+            description,
+            is_active as "isActive",
+            created_at as "createdAt"
           FROM cities 
           ORDER BY created_at DESC
         `)
+        data = citiesResult.rows.map((city) => ({
+          ...city,
+          isActive: city.isActive ? "Active" : "Inactive",
+        }))
         filename = "cities_export"
-        headers = ["City ID", "City Name", "Country", "Description", "Active", "Created At"]
         break
 
       default:
@@ -108,72 +91,32 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
 
     client.release()
 
-    if (format === "pdf") {
-      // Generate PDF
-      const doc = new PDFDocument({ margin: 50 })
+    if (format === "excel") {
+      // Create Excel file
+      const worksheet = XLSX.utils.json_to_sheet(data)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, type)
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
+        },
+      })
+    } else if (format === "pdf") {
+      // Create PDF file
+      const doc = new PDFDocument()
       const chunks: Buffer[] = []
 
       doc.on("data", (chunk) => chunks.push(chunk))
-      doc.on("end", () => {})
-
-      // Add title
-      doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Export`, { align: "center" })
-      doc.moveDown()
-
-      // Add date
-      doc.fontSize(12).text(`Generated on: ${new Date().toLocaleString()}`, { align: "right" })
-      doc.moveDown()
-
-      // Add table headers
-      const startY = doc.y
-      let currentY = startY
-      const rowHeight = 20
-      const colWidth = 70
-
-      // Draw headers
-      doc.fontSize(10).fillColor("black")
-      headers.forEach((header, index) => {
-        doc.text(header, 50 + index * colWidth, currentY, { width: colWidth - 5, ellipsis: true })
-      })
-
-      currentY += rowHeight
-      doc
-        .moveTo(50, currentY)
-        .lineTo(50 + headers.length * colWidth, currentY)
-        .stroke()
-
-      // Add data rows
-      result.rows.forEach((row, rowIndex) => {
-        if (currentY > 700) {
-          doc.addPage()
-          currentY = 50
-        }
-
-        headers.forEach((header, colIndex) => {
-          let value = row[header]
-          if (value instanceof Date) {
-            value = value.toLocaleDateString()
-          } else if (Array.isArray(value)) {
-            value = value.join(", ")
-          } else if (value === null || value === undefined) {
-            value = ""
-          } else {
-            value = String(value)
-          }
-
-          doc.text(value, 50 + colIndex * colWidth, currentY, { width: colWidth - 5, ellipsis: true })
-        })
-
-        currentY += rowHeight
-      })
-
-      doc.end()
 
       return new Promise((resolve) => {
         doc.on("end", () => {
-          const pdfBuffer = Buffer.concat(chunks)
+          const buffer = Buffer.concat(chunks)
           resolve(
-            new NextResponse(pdfBuffer, {
+            new NextResponse(buffer, {
               headers: {
                 "Content-Type": "application/pdf",
                 "Content-Disposition": `attachment; filename="${filename}.pdf"`,
@@ -181,26 +124,48 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
             }),
           )
         })
-      })
-    } else if (format === "excel") {
-      // Generate Excel
-      const worksheet = XLSX.utils.json_to_sheet(result.rows)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, type)
 
-      const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+        // Add content to PDF
+        doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Export`, 50, 50)
+        doc.moveDown()
 
-      return new NextResponse(excelBuffer, {
-        headers: {
-          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
-        },
+        if (data.length > 0) {
+          const keys = Object.keys(data[0])
+          let yPosition = 120
+
+          // Add headers
+          doc.fontSize(12).font("Helvetica-Bold")
+          keys.forEach((key, index) => {
+            doc.text(key, 50 + index * 80, yPosition, { width: 75 })
+          })
+
+          yPosition += 20
+          doc.font("Helvetica")
+
+          // Add data rows
+          data.forEach((row, rowIndex) => {
+            if (yPosition > 700) {
+              doc.addPage()
+              yPosition = 50
+            }
+
+            keys.forEach((key, index) => {
+              const value = row[key]?.toString() || ""
+              doc.text(value.substring(0, 15), 50 + index * 80, yPosition, { width: 75 })
+            })
+            yPosition += 15
+          })
+        } else {
+          doc.text("No data available", 50, 120)
+        }
+
+        doc.end()
       })
-    } else {
-      // CSV format
+    } else if (format === "csv") {
+      const headers = Object.keys(data[0] || {})
       const csvContent = [
         headers.join(","),
-        ...result.rows.map((row) => headers.map((header) => `"${row[header] || ""}"`).join(",")),
+        ...data.map((row) => headers.map((header) => `"${row[header] || ""}"`).join(",")),
       ].join("\n")
 
       return new NextResponse(csvContent, {
@@ -210,8 +175,10 @@ export async function GET(request: NextRequest, { params }: { params: { type: st
         },
       })
     }
+
+    return NextResponse.json({ error: "Invalid format" }, { status: 400 })
   } catch (error) {
     console.error("Export error:", error)
-    return NextResponse.json({ error: "Failed to export data" }, { status: 500 })
+    return NextResponse.json({ error: "Export failed" }, { status: 500 })
   }
 }
