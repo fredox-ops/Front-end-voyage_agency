@@ -29,7 +29,7 @@ export async function POST() {
     const backupPath = path.join(backupDir, backupFile)
 
     // Create database backup using pg_dump
-    const command = `pg_dump -h localhost -U your_username -d costa_voyage > "${backupPath}"`
+    const command = `pg_dump -h localhost -U postgres -d costa_voyage > "${backupPath}"`
 
     await execAsync(command, {
       env: { ...process.env, PGPASSWORD: "your_password" },
